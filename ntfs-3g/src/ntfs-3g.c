@@ -3695,7 +3695,7 @@ int main(int argc, char *argv[])
 			close(fd);
 	} while (fd >= 0 && fd <= 2);
 
-#ifndef FUSE_INTERNAL
+#if 0
 	if ((getuid() != geteuid()) || (getgid() != getegid())) {
 		fprintf(stderr, "%s", setuid_msg);
 		return NTFS_VOLUME_INSECURE;

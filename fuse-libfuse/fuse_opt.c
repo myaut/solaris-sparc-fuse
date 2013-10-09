@@ -173,12 +173,33 @@ int fuse_opt_match(const struct fuse_opt *opts, const char *opt)
     return find_opt(opts, opt, &dummy) ? 1 : 0;
 }
 
+static char* opt_param_unescape(const char* param) {
+	char* new_param = malloc(strlen(param) + 1);
+	char* p = new_param;
+
+	if(!new_param)
+		return NULL;
+
+	while(*param) {
+		if(*param == '\\' && *(param + 1) == ',') {
+			/* Ignore \ character */
+			++param;
+		}
+
+		*p++ = *param++;
+	}
+
+	*p = '\0';
+
+	return new_param;
+}
+
 static int process_opt_param(void *var, const char *format, const char *param,
                              const char *arg)
 {
     assert(format[0] == '%');
     if (format[1] == 's') {
-        char *copy = strdup(param);
+        char *copy = opt_param_unescape(param);
         if (!copy)
             return alloc_failed();
 
@@ -260,16 +281,23 @@ static int process_gopt(struct fuse_opt_context *ctx, const char *arg, int iso)
 static int process_real_option_group(struct fuse_opt_context *ctx, char *opts)
 {
     char *sep;
+    char *tmp = opts;
 
     do {
         int res;
-        sep = strchr(opts, ',');
+        sep = strchr(tmp, ',');
+
+        if(sep && sep != tmp && *(sep - 1) == '\\') {
+        	tmp = sep + 1;
+        	continue;
+        }
+
         if (sep)
             *sep = '\0';
         res = process_gopt(ctx, opts, 1);
         if (res == -1)
             return -1;
-        opts = sep + 1;
+        opts = tmp = sep + 1;
     } while (sep);
 
     return 0;
@@ -279,7 +307,18 @@ static int process_option_group(struct fuse_opt_context *ctx, const char *opts)
 {
     int res;
     char *copy;
-    const char *sep = strchr(opts, ',');
+    const char *tmp = opts;
+    const char *sep = strchr(tmp, ',');
+
+    while(sep) {
+    	if(sep == tmp || *(sep - 1) != '\\') {
+    		break;
+    	}
+
+    	tmp = sep + 1;
+    	sep = strchr(tmp, ',');
+	}
+
     if (!sep)
         return process_gopt(ctx, opts, 1);
 

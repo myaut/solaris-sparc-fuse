@@ -26,10 +26,9 @@
 include ../../Makefile.com
 MACH:sh = uname -p
 PSTAMP:sh= echo "`hostname`:`date +%Y-%m-%d`"
-HGVER:sh = hg id -i
 VER = "2.7.1"
 
 pkg:
-	pkgmk -v "$(VER) ($(HGVER))" -a $(MACH) -p $(PSTAMP) \
+	pkgmk -v "$(VER)" -a $(MACH) -p $(PSTAMP) \
 	     -f prototype_$(MACH) -o -r ../$(ROOT) -d ../../packages
 

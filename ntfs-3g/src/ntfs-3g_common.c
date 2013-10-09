@@ -203,6 +203,46 @@ int ntfs_strinsert(char **dest, const char *append)
 	return 0;
 }
 
+/* Escapes , symbols */
+int ntfs_strappend_escaped(char **dest, const char *append) {
+	char* e_append;
+	char* dst;
+	const char* src;
+	int num_extra_chars;
+	int init_extra_chars = 8;
+
+retry:
+	num_extra_chars = init_extra_chars;
+	e_append = malloc(strlen(append) + init_extra_chars + 1);
+
+	if(!e_append)
+		return 1;
+
+	src = append;
+	dst = e_append;
+	while(*src) {
+		if(*src == ',') {
+			*dst++ = '\\';
+			--num_extra_chars;
+
+			if(num_extra_chars == 0) {
+				init_extra_chars += 8;
+				free(e_append);
+				goto retry;
+			}
+		}
+
+		*dst++ = *src++;
+	}
+
+	*dst = '\0';
+
+	ntfs_strappend(dest, e_append);
+	free(e_append);
+
+	return 0;
+}
+
 static int bogus_option_value(char *val, const char *s)
 {
 	if (val) {
@@ -523,7 +563,7 @@ char *parse_mount_options(ntfs_fuse_context_t *ctx,
 	
 	if (ntfs_strappend(&ret, "fsname="))
 		goto err_exit;
-	if (ntfs_strappend(&ret, popts->device))
+	if (ntfs_strappend_escaped(&ret, popts->arg_device))
 		goto err_exit;
 	if (permissions && !acl)
 		ctx->secure_flags |= (1 << SECURITY_DEFAULT);

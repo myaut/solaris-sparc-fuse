@@ -26,7 +26,7 @@
 include ../../Makefile.com
 MACH:sh = uname -p
 PSTAMP:sh= echo "`hostname`:`date +%Y-%m-%d`"
-HGVER:sh = hg id -i
+HGVER = 1.0.1
 
 pkg:
 	pkgmk -v $(HGVER) -a $(MACH) -p $(PSTAMP) -f prototype_$(MACH) \
