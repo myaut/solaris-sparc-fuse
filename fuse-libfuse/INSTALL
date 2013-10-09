@@ -1,0 +1,34 @@
+Building
+---
+
+Requirements:
+    Solaris Nevada >= build 62
+    Sun Studio 11
+
+Build the FUSE library and utilities:
+$ make
+
+Note: gmake(1) will fail to build the FUSE library.
+
+
+Installing
+---
+
+Populate the proto area:
+$ make install
+
+Generate the package:
+$ make pkg
+
+Add the SUNWlibfuse package to the system (as root):
+# pkgadd -d packages SUNWlibfuse
+
+Assign the execution profile to a user (as root):
+# usermod -P "FUSE File System Management" <username>
+
+
+Uninstalling
+---
+
+Remove the SUNWlibfuse from the system (as root):
+# pkgrm SUNWlibfuse

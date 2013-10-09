@@ -1,0 +1,103 @@
+
+NAME
+	FUSE - file system in user space
+
+DESCRIPTION
+
+	FUSE (File system in Userspace) is a framework for user-space
+	programs to export a virtual file system to the Solaris
+	kernel. FUSE also aims to provide a secure method for non-
+	privileged users to create and mount their own file system
+	implementations.
+
+    Architecture
+
+	FUSE consists of a kernel module and a user-space library. A
+	FUSE file system is a daemon that uses the library to mount
+	the file system and register file system operations.
+
+	The library communicates with the FUSE kernel module through
+	the /dev/fuse character device. File system calls are passed
+	through the FUSE device to the library, which uses the
+	registered file system operations to process the call, and
+	pass the results back through the FUSE device to the caller.
+
+    Mounting FUSE File Systems
+
+	FUSE file systems are mounted by the file system program as
+	the first step in starting the file system daemon. FUSE file
+	system programs typically have a syntax that names mount
+	arguments much as the mount(1M) command, i.e.,
+
+	# filesys_program [options] <special> <mount_point>
+	
+	FUSE is also supported by the mount(1M) and umount(1M) commands.
+	See mount_fuse(1M) for more information on mounting FUSE file
+	systems.
+
+    Security
+
+        Non-Privileged Mounts
+
+	    Non-root users can mount FUSE file systems if they have
+	    the FUSE File System Management profile. The user must also
+	    have ownership and write access to the mount point.
+
+	Mount Restrictions
+
+	    FUSE file systems are mounted with the 'nodevices' and
+	    'nosetuid' options by default. This can only be overridden
+	    by the root user.
+
+        Access Control
+
+	    FUSE supports two modes of file system access control:
+	    "local" and "remote". Remote access control is the
+	    default; in this mode, all access control is left to the
+	    file system. Local access control, enabled with the
+	    'default_permissions' mount option, lets FUSE determine
+	    access according to the ownership and permissions
+	    reported by the file system.
+
+        Block Device Access
+
+	    By default, non-root users cannot mount FUSE file systems
+	    that are backed by a block device. To do so, the user
+	    must have read-write access to the device.
+
+        Security-Related Mount Options
+
+	    See mount(1M) and mount_fuse(1M) for information on mount
+	    options relevant to security.
+
+    Configuration
+
+	FUSE configuration options can be specified in the file
+	'/etc/fuse.conf'. Currently these options are:
+
+	mount_max=N
+
+	    Set the maximum number of FUSE mounts allowed to non-root
+	    users. The default is 1000.
+
+	user_allow_other
+
+	    Allow non-root users to specify the 'allow_other' or
+	    'allow_root' mount options.
+
+ATTRIBUTES
+	See attributes(5) for descriptions of the following
+	attributes:
+
+	____________________________________________________________
+	|       ATTRIBUTE TYPE        |       ATTRIBUTE VALUE       |
+	|_____________________________|_____________________________|
+	| Availability                | SUNWfusefs, SUNWlibfuse     |
+	|_____________________________|_____________________________|
+	| Interface Stability         |                             |
+	|_____________________________|_____________________________|
+
+SEE ALSO
+     mount(1M), mount_fuse(1M), mnttab(4), vfstab(4), fusermount(8), sshfs(8)
+
+

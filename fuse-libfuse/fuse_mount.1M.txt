@@ -1,0 +1,371 @@
+
+NAME
+	mount_fuse - mount a FUSE file system
+
+SYNOPSIS
+
+	mount -F fuse [generic_options] -o subtype=filesystem[,specific_option]
+		special mount_point
+	
+	mount -F fuse [generic-options] [-o specific_option[,specific_option]]
+		filesystem#special mount_point
+
+DESCRIPTION
+
+	The mount utility attaches a FUSE file system to the file system
+	hierarchy at the path location _mount_point_, which
+	must already exist. If _mount_point_ has any contents prior to
+	the mount operation, the contents remain hidden until the file
+	system is unmounted.
+
+	If mount is invoked with _special_ or _mount_point_ as the only
+	arguments, mount will search /etc/vfstab to fill in the missing
+	arguments. If the -F option is omitted,	mount takes the file
+	system type from /etc/vfstab.
+
+    File System Subtype
+
+	To mount a FUSE file system, both the file system type 'fuse' and a
+	subtype naming the specific FUSE file system program must be
+	specified. File system subtypes can be specified in one of two ways:
+	either prepended to the _special_ argument with a '#' character, or
+	with the "-o subtype=NAME" option.
+
+    Default Options
+
+	By default, FUSE file systems are mounted with the generic options
+	'nodevices' and 'nosetuid'. These options can only be overridden by
+	root. Also note that FUSE file systems may specify additional default
+	mount options.
+	
+    Configuration
+
+	The fuse configuration file '/etc/fuse.conf' contains optional
+	configuration parameters. Currently these options are:
+
+	mount_max=N
+
+	    Set the maximum number of FUSE mounts allowed to non-root
+	    users. The default is 1000.
+
+	user_allow_other
+
+	    Allow non-root users to specify the 'allow_other' or
+	    'allow_root' mount options.
+
+OPTIONS
+
+	See mount(1M) for the list of supported _generic_options_.
+
+	The following options are supported:
+
+	-o _specific_options_
+
+	Specify both FUSE specific options and file system specific
+	options in a comma-separated list with no intervening spaces.
+	If invalid options are specified, an error message is printed
+	and the mount fails.
+
+	In addition to options specific the particular file system being
+	mounted, the following FUSE specific options are available:
+
+	    ac_attr_timeout=N[.N]
+
+		The timeout in seconds for which file attributes are cached
+		for the purpose of checking if "auto_cache" should flush the
+		file data on open. The default is the value of 'attr_timeout'.
+
+		For all the timeout options, time can be specified in fractions
+		(e.g. "-o xxx_timeout=2.8").
+
+	    allow_other
+
+		Override the security measure restricting file access to the
+		user mounting the file system, so that all users, including
+		root, can access the file system.
+
+		By default, this option is only allowed to root, but this
+		restriction can be removed with the configuration option
+		'user_allow_other' described in the section entitled "FUSE 
+		Configuration".
+
+	    allow_root
+
+		Similar to 'allow_other', but limits file access to the user
+		mounting the file system and root. This option and
+		'allow_other' are mutually exclusive.
+
+	    async_read | sync_read
+
+		Perform reads asynchronously or synchronously. The default is 
+		asynchronous.
+
+	    attr_timeout=N[.N]
+
+		The timeout in seconds for which file/directory attributes
+		are cached. The default is 1.0 second.
+
+		For all the timeout options, time can be specified in fractions
+		(e.g. "-o xxx_timeout=2.8").
+
+	    auto_cache
+
+		Enable automatic flushing of the data cache on open. The
+		cache will only be flushed if the modification time or the
+		file size has changed.
+
+	    blkdev
+
+		Mount a file system backed by a block device. This is a
+		privileged option. The device must be specified with the
+		'fsname=NAME' option.
+
+	    default_permissions
+
+		Enable permission checking inside FUSE based on the ownership
+		and permissions reported by the file system. By default, all
+		access control is left to the file system itself.
+
+		This option is particularly useful when used with the
+		'allow_other' option.
+
+	    debug
+
+		Enable the printing of debug information by the library.
+
+	    direct_io
+
+		Disable the use of the page cache (file content cache) in the
+		kernel. This has several effects:
+
+		- Each read() or write() system call will initiate one or
+		  more read or write operations, as the data from previous calls
+		  will not be cached in the kernel.
+
+		- The return value of the read() and write() system calls
+		  will correspond to the return values of the read and write
+		  operations. This is useful, for example, if the file size is
+		  not known in advance (before reading it).
+
+	    entry_timeout=N[.N]
+
+		The timeout in seconds for which name lookups will be cached.
+		The default is 1.0 second.
+
+		For all the timeout options, time can be specified in fractions
+		(e.g. "-o xxx_timeout=2.8").
+
+	    fsname=NAME
+
+		Set the file system source. Defaults to the program name.
+
+	    hard_remove
+
+		When a file is deleted, the default behavior is to rename the
+		file so that it is hidden (.fuse_hiddenXXX), and only remove the 
+		file when it is finally released. This relieves the file system
+		from having to deal with the problem of unlinking files opened
+		by other processes.
+
+		This option disables the hiding behavior, so that files are
+		removed immediately in an unlink operation (or in a rename
+		operation which overwrites an existing file).
+
+		The use of this option is not recommended. When 'hard_remove' is
+		used, the following libc functions will fail on unlinked files
+		(returning errno of ENOENT):
+
+		- read()
+		- write()
+		- fsync()
+		- close()
+		- f*xattr()
+		- ftruncate()
+		- fstat()
+		- fchmod()
+		- fchown()
+
+	    intr
+
+		Allow requests to be interrupted. Enabling this option may
+		result in unexpected behavior if the file system does not
+		support request interruption.
+
+	    intr_signal=N
+
+		Specify which signal number to send to the file system when a
+		request is interrupted. The default is 10 (USER1).
+
+	    kernel_cache
+
+		Disable flushing the cache of the file contents on every
+		open operation. This should only be enabled on file
+		systems where file data is never changed externally (not
+		through the mounted FUSE file system). Thus it is not
+		suitable for network-based file systems and other
+		"intermediate" file systems.
+
+		NOTE: If this option is not specified (and the 'direct_io'
+		option is not specified) data is still cached after the open
+		call, so a read system call will not always initiate a read
+		operation.
+
+	    large_read
+
+		Issue large read requests.
+
+	    max_read=N
+
+		Set the maximum size of read operations. The default is
+		infinite. Note that the size of read requests is already
+		limited to 32 pages (which is 128kbyte on i386).
+
+	    max_readahead=N
+
+		Set the maximum number of bytes to read-ahead. The default is
+		determined by the kernel.
+
+	    max_write=N
+
+		Set the maximum number of bytes in a single write operation.
+		The default is 128kbytes. Note, that due to various limitations,
+		the size of write requests can be much smaller (4kbytes).
+		This restriction will be removed in the future.
+
+	    modules=M1[:M2...]
+
+		Add modules to the file system stack. Modules are pushed in
+		the order they are specified, with the original file system
+		being on the bottom of the stack. See the section entitled
+		"Modules Distributed with FUSE" for more information.
+
+	    negative_timeout=N[.N]
+
+		The timeout in seconds for which a negative lookup will be
+		cached. If a lookup on a file system object returned ENOENT,
+		it will only be performed again after the timeout, and the
+		object is assumed not to exist until then. The default is 0.0
+		second, meaning that caching negative lookups is disabled.
+
+		For all the timeout options, time can be specified in fractions
+		(e.g. "-o xxx_timeout=2.8").
+
+	    nonempty
+
+		Allow a mount over a non-empty file or directory. By default
+		these mounts are rejected (from FUSE version 2.3.1 onward) to
+		prevent accidental covering up of data.
+
+	    readdir_ino
+
+		If 'use_ino' option is not given, FUSE 	will still attempt to
+		fill in the 'd_ino' stat field in readdir(). If the name was
+		previously looked up, and is still in the cache, the inode
+		number found there will be used. Otherwise it will be set to
+		'-1'. If 'use_ino' option is given, this option is ignored.
+
+	    subtype=TYPE
+
+		Set the file system type. Defaults to the program name.
+
+	    uid=N, gid=N
+
+		Override the 'st_uid' or 'st_gid' stat field set by the
+		file system, respectively.
+
+	    umask=N, dmask=N, fmask=N
+
+		Override the permission bits in 'st_mode' set by the file
+		system. The resulting permission bits are the ones missing
+		from the given umask value. The value is given in octal
+		representation. The 'dmask' and 'fmask' options specify the
+		mode mask for directories and files only, respectively.
+
+	    use_ino
+
+		Honor the 'st_ino' field in getattr() and fill_dir(). This
+		value is used to fill in the 'st_ino' field in the
+		stat()/lstat()/fstat() functions and the 'd_ino' field in the
+		readdir() function. The file system does not have to
+		guarantee uniqueness, however some applications rely on this
+		value being unique for the whole file system.
+
+    Modules Distributed with FUSE
+
+	The following modules distributed with FUSE:
+
+		iconv
+
+		     Perform file name character set conversion. Options are:
+
+		     from_code=CHARSET
+
+		         Character set to convert from (see iconv(1) for a
+		         list of possible values). Default is UTF-8.
+
+		     to_code=CHARSET
+
+		         Character set to convert to. Default is determined by
+		         the current locale.
+
+		 subdir
+
+		     Prepend a given directory to each path. Options are:
+
+		     subdir=DIR
+
+		         Directory to prepend to all paths. This option is
+		         mandatory.
+
+		     rellinks
+
+		         Transform absolute symlinks into relative.
+
+		     norellinks
+
+		         Do not transform absolute symlinks into relative.
+		         This is the default.
+
+EXAMPLES
+
+	Example 1: Mount an sshfs file system with default options using
+	the prepended syntax:
+
+	# mount -F fuse sshfs#user@hostname: ~/mnt/sshfs
+
+	Example 2: Mount an sshfs file system with default optoins using
+	the 'subtype' option:
+	
+	# mount -F fuse -o subtype=sshfs user@hostname: ~/mnt/sshfs
+
+	Example 3: Mount an sshfs file system with the 'allow_other' and
+	'default_permissions' options using the 'subtype' option:
+
+	# mount -F fuse -o allow_other,default_permissions,subtype=sshfs user@hostname ~/mnt/sshfs
+
+FILES
+	/etc/mnttab
+		table of mounted file systems
+
+	/etc/vfstab
+		list of default parameters for each file system
+
+	/etc/fuse.conf
+		FUSE configuration file
+
+ATTRIBUTES
+	See attributes(5) for descriptions of the following
+	attributes:
+
+	____________________________________________________________
+	|       ATTRIBUTE TYPE        |       ATTRIBUTE VALUE       |
+	|_____________________________|_____________________________|
+	| Availability                | SUNWlibfuse                 |
+	|_____________________________|_____________________________|
+	| Interface Stability         |                             |
+	|_____________________________|_____________________________|
+
+
+SEE ALSO
+     mount(1M), mnttab(4), vfstab(4), fuse(8), fusermount(8), sshfs(8)
+
