@@ -18,7 +18,7 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "exfat.h"
+#include <exfat/exfat.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 #ifdef __APPLE__
 #include <sys/disk.h>
 #endif
@@ -33,17 +34,6 @@
 #include <sys/uio.h>
 #include <ublio.h>
 #endif
-
-struct exfat_dev
-{
-	int fd;
-	enum exfat_mode mode;
-	off_t size; /* in bytes */
-#ifdef USE_UBLIO
-	off_t pos;
-	ublio_filehandle_t ufh;
-#endif
-};
 
 static int open_ro(const char* spec)
 {
@@ -83,6 +73,10 @@ struct exfat_dev* exfat_open(const char* spec, enum exfat_mode mode)
 		exfat_error("failed to allocate memory for device structure");
 		return NULL;
 	}
+
+	dev->part_num = 0;
+	dev->part_offset = 0;
+	dev->part_size = 0;
 
 	switch (mode)
 	{
@@ -243,7 +237,9 @@ enum exfat_mode exfat_get_mode(const struct exfat_dev* dev)
 
 off_t exfat_get_size(const struct exfat_dev* dev)
 {
-	return dev->size;
+	return (dev->part_num == 0)
+				? dev->size
+				: dev->part_size;
 }
 
 off_t exfat_seek(struct exfat_dev* dev, off_t offset, int whence)
@@ -252,7 +248,22 @@ off_t exfat_seek(struct exfat_dev* dev, off_t offset, int whence)
 	/* XXX SEEK_CUR will be handled incorrectly */
 	return dev->pos = lseek(dev->fd, offset, whence);
 #else
-	return lseek(dev->fd, offset, whence);
+	off_t result;
+
+	if(whence == SEEK_SET) {
+		offset += dev->part_offset;
+	}
+	else if(whence == SEEK_END && dev->part_size > 0) {
+		whence = SEEK_SET;
+		offset = offset + dev->part_offset + dev->part_size;
+	}
+
+	result = lseek(dev->fd, offset, whence);
+
+	if(result == ((off_t)-1))
+		return result;
+
+	return result - dev->part_offset;
 #endif
 }
 
@@ -286,7 +297,7 @@ void exfat_pread(struct exfat_dev* dev, void* buffer, size_t size,
 #ifdef USE_UBLIO
 	if (ublio_pread(dev->ufh, buffer, size, offset) != size)
 #else
-	if (pread(dev->fd, buffer, size, offset) != size)
+	if (pread(dev->fd, buffer, size, dev->part_offset + offset) != size)
 #endif
 		exfat_bug("failed to read %zu bytes from file at %"PRIu64, size,
 				(uint64_t) offset);
@@ -298,7 +309,7 @@ void exfat_pwrite(struct exfat_dev* dev, const void* buffer, size_t size,
 #ifdef USE_UBLIO
 	if (ublio_pwrite(dev->ufh, buffer, size, offset) != size)
 #else
-	if (pwrite(dev->fd, buffer, size, offset) != size)
+	if (pwrite(dev->fd, buffer, size, dev->part_offset + offset) != size)
 #endif
 		exfat_bug("failed to write %zu bytes to file at %"PRIu64, size,
 				(uint64_t) offset);
@@ -382,4 +393,66 @@ ssize_t exfat_generic_pwrite(struct exfat* ef, struct exfat_node* node,
 	}
 	exfat_update_mtime(node);
 	return size - remainder;
+}
+
+typedef struct _exfat_partition {
+	uint8_t  status;
+	uint8_t	 first_chs[3];
+	uint8_t  type;
+	uint8_t  last_chs[3];
+	le32_t first_lba;
+	le32_t size_lba;
+} __attribute__((packed)) exfat_partition_t;
+
+int exfat_set_partition(struct exfat_dev *dev, int partnum) {
+	void* mbr;
+	uint8_t*  bmbr;
+
+	exfat_partition_t* partition;
+
+	int err = 0;
+
+	if(!dev || partnum < 0 || partnum > 4) {
+		errno = EINVAL;
+		return 1;
+	}
+
+	dev->part_num  = 0;
+	dev->part_size 	= dev->size;
+	dev->part_offset   = 0;
+
+	if(partnum == 0) {
+		return 0;
+	}
+
+	mbr = malloc(512);
+
+	if(!mbr) {
+		return 1;
+	}
+
+	exfat_pread(dev, mbr, 512, 0);
+	bmbr = (uint8_t*)  mbr;
+
+	/* Check signature */
+	if(   bmbr[0x1FE] != 0x55
+	   || bmbr[0x1FF] != 0xAA) {
+		err = EIO;
+		goto end;
+	}
+
+	partition = (exfat_partition_t*) (bmbr + 0x1BE + 16 * (partnum - 1));
+
+	if(partition->type == 0) {
+		err = ESRCH;
+		goto end;
+	}
+
+	dev->part_num = partnum;
+	dev->part_offset = ((off_t) le32_to_cpu(partition->first_lba)) * EXFAT_BLK_SIZE;
+	dev->part_size   = ((off_t) le32_to_cpu(partition->size_lba))  * EXFAT_BLK_SIZE;
+
+end:
+	free(mbr);
+	return err;
 }

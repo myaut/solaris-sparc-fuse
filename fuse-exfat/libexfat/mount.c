@@ -18,7 +18,7 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "exfat.h"
+#include <exfat/exfat.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -133,6 +133,75 @@ static int prepare_super_block(const struct exfat* ef)
 	return commit_super_block(ef);
 }
 
+struct exfat_super_block* exfat_find_sb(struct exfat_dev* dev) {
+	int partnum = 0;
+	int err = 0;
+	int parttable = 1;
+	struct exfat_super_block* sb;
+
+retry:
+	while(partnum++ < 4) {
+		if((err = exfat_set_partition(dev, partnum)) == 0) {
+			exfat_debug("Found partition #%d [%lld:+%lld]\n", partnum,
+							(long long) dev->part_offset, (long long) dev->part_size);
+			break;
+		}
+
+		if(err != ESRCH) {
+			/* No partition table found or other error */
+			partnum = 0;
+			parttable = 0;
+
+			exfat_error("Error reading partition #%d", partnum);
+
+			break;
+		}
+	}
+
+	sb = malloc(sizeof(struct exfat_super_block));
+	if (sb == NULL)
+	{
+		exfat_error("failed to allocate memory for the super block");
+		return NULL;
+	}
+	memset(sb, 0, sizeof(struct exfat_super_block));
+
+	exfat_pread(dev, sb, sizeof(struct exfat_super_block), 0);
+
+	if (memcmp(sb->oem_name, "EXFAT   ", 8) != 0)
+	{
+		if(parttable && partnum < 4)
+			goto retry;
+
+		exfat_error("exFAT file system is not found");
+		free(sb);
+		return NULL;
+	}
+	if (sb->version.major != 1 || sb->version.minor != 0)
+	{
+		exfat_error("unsupported exFAT version: %hhu.%hhu",
+				sb->version.major, sb->version.minor);
+		free(sb);
+		return NULL;
+	}
+	if (sb->fat_count != 1)
+	{
+		exfat_error("unsupported FAT count: %hhu", sb->fat_count);
+		free(sb);
+		return NULL;
+	}
+	/* officially exFAT supports cluster size up to 32 MB */
+	if ((int) sb->sector_bits + (int) sb->spc_bits > 25)
+	{
+		exfat_error("too big cluster size: 2^%d",
+				(int) sb->sector_bits + (int) sb->spc_bits);
+		free(sb);
+		return NULL;
+	}
+
+	return sb;
+}
+
 int exfat_mount(struct exfat* ef, const char* spec, const char* options)
 {
 	int rc;
@@ -160,45 +229,9 @@ int exfat_mount(struct exfat* ef, const char* spec, const char* options)
 			ef->ro = 1;
 	}
 
-	ef->sb = malloc(sizeof(struct exfat_super_block));
-	if (ef->sb == NULL)
-	{
+	ef->sb = exfat_find_sb(ef->dev);
+	if(ef->sb == NULL) {
 		exfat_close(ef->dev);
-		exfat_error("failed to allocate memory for the super block");
-		return -ENOMEM;
-	}
-	memset(ef->sb, 0, sizeof(struct exfat_super_block));
-
-	exfat_pread(ef->dev, ef->sb, sizeof(struct exfat_super_block), 0);
-	if (memcmp(ef->sb->oem_name, "EXFAT   ", 8) != 0)
-	{
-		exfat_close(ef->dev);
-		free(ef->sb);
-		exfat_error("exFAT file system is not found");
-		return -EIO;
-	}
-	if (ef->sb->version.major != 1 || ef->sb->version.minor != 0)
-	{
-		exfat_close(ef->dev);
-		exfat_error("unsupported exFAT version: %hhu.%hhu",
-				ef->sb->version.major, ef->sb->version.minor);
-		free(ef->sb);
-		return -EIO;
-	}
-	if (ef->sb->fat_count != 1)
-	{
-		exfat_close(ef->dev);
-		free(ef->sb);
-		exfat_error("unsupported FAT count: %hhu", ef->sb->fat_count);
-		return -EIO;
-	}
-	/* officially exFAT supports cluster size up to 32 MB */
-	if ((int) ef->sb->sector_bits + (int) ef->sb->spc_bits > 25)
-	{
-		exfat_close(ef->dev);
-		free(ef->sb);
-		exfat_error("too big cluster size: 2^%d",
-				(int) ef->sb->sector_bits + (int) ef->sb->spc_bits);
 		return -EIO;
 	}
 

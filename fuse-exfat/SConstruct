@@ -27,9 +27,14 @@ for var in ['PATH', 'SYSROOT']:
 	if var in os.environ:
 		env['ENV'][var] = os.environ[var]
 
-destdir = env.get('DESTDIR', '/sbin');
+destbin = env.get('DESTBIN', '/sbin');
+destlib = env.get('DESTLIB', '/lib')
+destinc = env.get('DESTINC', '/usr/include')
+version = '1.0.1'
 libs = ['exfat']
 libfuse = 'fuse'
+
+env['SHLIBSUFFIX'] += '.' + version
 
 if not env.GetOption('clean'):
 	conf = Configure(env)
@@ -44,10 +49,7 @@ if not env.GetOption('clean'):
 		conf.env.Replace(CCFLAGS = os.environ['CCFLAGS'])
 	# Set default CCFLAGS for known compilers
 	if not conf.env['CCFLAGS']:
-		if conf.env['CC'] == 'gcc':
-			conf.env.Replace(CCFLAGS = '-Wall -O2 -ggdb -std=c99')
-		elif conf.env['CC'] == 'clang':
-			conf.env.Replace(CCFLAGS = '-Wall -O2 -g -std=c99')
+		conf.env.Replace(CCFLAGS = '-Wall -O2 -g -std=c99')
 	if 'CPPFLAGS' in os.environ:
 		conf.env.Replace(CPPFLAGS = os.environ['CPPFLAGS'])
 	conf.env.Append(CPPDEFINES = {'_FILE_OFFSET_BITS' : 64})
@@ -97,36 +99,67 @@ if not env.GetOption('clean'):
 
 
 
-def make_symlink(dir, target, link_name):
-	workdir = os.getcwd()
-	os.chdir(dir)
+def make_symlink(target, source, env):	
+	src_name = source[0].abspath
+	link_name = target[0].abspath
+	
 	try:
 		os.remove(link_name)
 	except OSError:
 		pass
-	os.symlink(target, link_name)
-	os.chdir(workdir)
+	
+	os.symlink(os.path.relpath(src_name, link_name), link_name)
 
-symlink = SCons.Action.ActionFactory(make_symlink,
-		lambda dir, target, link_name:
-				'make_symlink("%s", "%s", "%s")' % (dir, target, link_name))
+
+def make_directory(target, source, env):
+	try:
+		os.mkdir(target[0].abspath)
+	except OSError:
+		pass
+
+def install(target, alias, destdir):
+	target = Install(destdir, target)
+	Alias('install', target)
+	
+	if alias:
+		if not isinstance(alias, tuple):
+			alias = (alias, )
+			
+		for link_name in alias:
+			Alias('install', env.Command(link_name, target, make_symlink))
 
 def program(pattern, output, alias, libs):
 	sources = Glob(pattern)
 	if not sources:
 		return
 	target = env.Program(output, sources, LIBS = libs)
-	if alias:
-		Clean(Alias('install', Install(destdir, target),
-				symlink(destdir, os.path.basename(output), alias)),
-				destdir + '/' + alias)
-	else:
-		Alias('install', Install(destdir, target))
+	install(target, alias, destbin)
 
-env.Library('libexfat/exfat', Glob('libexfat/*.c'))
+def sharedlib(pattern, output, alias):
+	sources = Glob(pattern)
+	if not sources:
+		return
+	target = env.SharedLibrary(output, sources)
+	install(target, alias, destlib)
 
-program('fuse/*.c', 'fuse/mount.exfat-fuse', 'mount.exfat', [libs + [libfuse]])
+
+libexfat = sharedlib('libexfat/*.c', 'libexfat/exfat', 
+						(os.path.join(destlib, 'libexfat.so.' + version.split('.')[0]), 
+						 os.path.join(destlib, 'libexfat.so')))
+
+destinc = os.path.join(destinc, 'exfat')
+env.Command(destinc, [], make_directory)
+
+destlibfs = '/usr/lib/fs/exfat'
+env.Command(destlibfs, [], make_directory)
+
+install('libexfat/exfat/exfat.h',   None, destinc)
+install('libexfat/exfat/exfatfs.h', None, destinc)
+install('libexfat/exfat/version.h', None, destinc)
+install('libexfat/exfat/byteorder.h', None, destinc)
+
+program('fuse/*.c', 'fuse/mount.exfat-fuse', os.path.join(destlibfs, 'mount'), [libs + [libfuse]])
 program('dump/*.c', 'dump/dumpexfat', None, libs)
-program('fsck/*.c', 'fsck/exfatfsck', 'fsck.exfat', libs)
-program('mkfs/*.c', 'mkfs/mkexfatfs', 'mkfs.exfat', libs)
+program('fsck/*.c', 'fsck/exfatfsck', os.path.join(destlibfs, 'fsck'), libs)
+program('mkfs/*.c', 'mkfs/mkexfatfs',  os.path.join(destlibfs, 'mkfs'), libs)
 program('label/*.c', 'label/exfatlabel', None, libs)

@@ -3,6 +3,7 @@
 ARGS=$@
 UTDOMOUNT=/opt/SUNWut/lib/utdomount.bin
 NTFS3G=/bin/ntfs-3g
+EXFAT=/sbin/mount.exfat-fuse
 FUSE_UMOUNT=/usr/lib/fs/fuse/fusermount.bin
 
 AWK=/usr/bin/awk
@@ -88,9 +89,12 @@ fi
 if [ $MOUNT -eq 1 ] && [ $FSTYPE == "ntfs" ]; then
 	GROUPID=$($AWK -F: '{ if($3 == "'$USERID'") print $4 }' /etc/passwd)
 	$NTFS3G -o uid=$USERID,gid=$GROUPID $BLKDEV $PATH
+elif [ $MOUNT -eq 1 ] && [ $FSTYPE == "exfat" ]; then
+	$EXFAT $BLKDEV $PATH
 elif [ $UMOUNT -eq 1 ] && [ $FSTYPE == "fuse" ]; then
+	CURUID=$($ID -u)
 	OWNER=$($LS -ld $PATH | $AWK '{ print $3 }')
-	USERNAME=$($AWK -F: '{ if($3 == "'$USERID'") print $1 }' /etc/passwd)
+	USERNAME=$($AWK -F: '{ if($3 == "'$CURUID'") print $1 }' /etc/passwd)
 	
 	if [ "$OWNER" = "$USERNAME" ]; then
 		$FUSE_UMOUNT -u $PATH

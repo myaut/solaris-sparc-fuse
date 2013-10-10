@@ -18,7 +18,7 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "exfat.h"
+#include <exfat/exfat.h>
 #include <errno.h>
 
 static char* wchar_to_utf8(char* output, wchar_t wc, size_t outsize)

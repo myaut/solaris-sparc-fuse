@@ -19,18 +19,22 @@
 */
 
 #define FUSE_USE_VERSION 26
-#include <fuse.h>
+#include <fuse/fuse.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <exfat.h>
+#include <exfat/exfat.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
+
+struct fuse_chan* fc = NULL;
+struct fuse* fh = NULL;
+const char* mount_point = NULL;
 
 #define exfat_debug(format, ...)
 
@@ -38,8 +42,11 @@
 	#error FUSE 2.6 or later is required
 #endif
 
-const char* default_options = "ro_fallback,allow_other,blkdev,big_writes,"
-		"defer_permissions";
+const char* default_options = "ro_fallback,allow_other"
+#if 0
+",blkdev"
+#endif
+",big_writes,defer_permissions";
 
 struct exfat ef;
 
@@ -175,7 +182,6 @@ static int fuse_exfat_write(const char* path, const char* buffer, size_t size,
 		return -EIO;
 	return ret;
 }
-
 static int fuse_exfat_unlink(const char* path)
 {
 	struct exfat_node* node;
@@ -209,6 +215,12 @@ static int fuse_exfat_rmdir(const char* path)
 }
 
 static int fuse_exfat_mknod(const char* path, mode_t mode, dev_t dev)
+{
+	exfat_debug("[%s] %s 0%ho", __func__, path, mode);
+	return exfat_mknod(&ef, path);
+}
+
+static int fuse_exfat_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 {
 	exfat_debug("[%s] %s 0%ho", __func__, path, mode);
 	return exfat_mknod(&ef, path);
@@ -316,6 +328,7 @@ static struct fuse_operations fuse_exfat_ops =
 #endif
 	.statfs		= fuse_exfat_statfs,
 	.init		= fuse_exfat_init,
+	.mknod		= fuse_exfat_create,
 	.destroy	= fuse_exfat_destroy,
 };
 
@@ -346,6 +359,7 @@ static char* add_option(char* options, const char* name, const char* value)
 
 static char* add_fsname_option(char* options, const char* spec)
 {
+#if 0
 	char* spec_abs = realpath(spec, NULL);
 
 	if (spec_abs == NULL)
@@ -357,6 +371,9 @@ static char* add_fsname_option(char* options, const char* spec)
 	options = add_option(options, "fsname", spec_abs);
 	free(spec_abs);
 	return options;
+#else
+	return add_option(options, "fsname", spec);
+#endif
 }
 
 static char* add_user_option(char* options)
@@ -403,16 +420,28 @@ static char* add_fuse_options(char* options, const char* spec)
 	return options;
 }
 
+static void exfat_fuse_finish(void) {
+	if(fh)
+		fuse_remove_signal_handlers(fuse_get_session(fh));
+
+	/* note that fuse_unmount() must be called BEFORE fuse_destroy() */
+
+	if(mount_point && fc)
+		fuse_unmount(mount_point, fc);
+
+	if(fh)
+		fuse_destroy(fh);
+
+	exit(0);
+}
+
 int main(int argc, char* argv[])
 {
 	struct fuse_args mount_args = FUSE_ARGS_INIT(0, NULL);
 	struct fuse_args newfs_args = FUSE_ARGS_INIT(0, NULL);
 	const char* spec = NULL;
-	const char* mount_point = NULL;
 	char* mount_options;
 	int debug = 0;
-	struct fuse_chan* fc = NULL;
-	struct fuse* fh = NULL;
 	char** pp;
 
 	printf("FUSE exfat %u.%u.%u\n",
@@ -459,6 +488,8 @@ int main(int argc, char* argv[])
 		free(mount_options);
 		usage(argv[0]);
 	}
+
+	exfat_bug_handler = exfat_fuse_finish;
 
 	if (exfat_mount(&ef, spec, mount_options) != 0)
 	{
@@ -544,9 +575,6 @@ int main(int argc, char* argv[])
 	else
 		exfat_error("failed to daemonize");
 
-	fuse_remove_signal_handlers(fuse_get_session(fh));
-	/* note that fuse_unmount() must be called BEFORE fuse_destroy() */
-	fuse_unmount(mount_point, fc);
-	fuse_destroy(fh);
+	exfat_fuse_finish();
 	return 0;
 }

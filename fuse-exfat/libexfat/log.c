@@ -18,12 +18,15 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "exfat.h"
+#include <exfat/exfat.h>
 #include <stdarg.h>
 #include <syslog.h>
 #include <unistd.h>
 
 int exfat_errors;
+int exfat_log_enabled = 1;
+
+exfat_bug_handler_func exfat_bug_handler = abort;
 
 /*
  * This message means an internal bug in exFAT implementation.
@@ -45,7 +48,7 @@ void exfat_bug(const char* format, ...)
 		vsyslog(LOG_CRIT, format, aq);
 	va_end(aq);
 
-	abort();
+	exfat_bug_handler();
 }
 
 /*
@@ -56,6 +59,10 @@ void exfat_error(const char* format, ...)
 	va_list ap, aq;
 
 	exfat_errors++;
+
+	if(!exfat_log_enabled)
+		return;
+
 	va_start(ap, format);
 	va_copy(aq, ap);
 
@@ -78,6 +85,9 @@ void exfat_warn(const char* format, ...)
 {
 	va_list ap, aq;
 
+	if(!exfat_log_enabled)
+		return;
+
 	va_start(ap, format);
 	va_copy(aq, ap);
 
@@ -98,6 +108,9 @@ void exfat_warn(const char* format, ...)
 void exfat_debug(const char* format, ...)
 {
 	va_list ap;
+
+	if(!exfat_log_enabled)
+		return;
 
 	fflush(stdout);
 	fputs("DEBUG: ", stderr);

@@ -35,13 +35,15 @@ int fstyp_mod_dump(fstyp_mod_handle_t handle, FILE *fout, FILE *ferr);
 static int ntfs_device_fstyp_io_open(struct ntfs_device *dev, int flags);
 static int ntfs_device_fstyp_io_close(struct ntfs_device *dev);
 
+static int ntfs_get_attr(fstyp_ntfs_t *h);
+
 struct ntfs_device_operations ntfs_device_fstyp_io_ops;
 boolean_t io_ops_initialized = B_FALSE;
 
 int
 fstyp_mod_init(int fd, off64_t offset, fstyp_mod_handle_t *handle)
 {
-    fstyp_ntfs_t *h = (fstyp_ntfs_t *)handle;
+    fstyp_ntfs_t *h;
     int* d_private;
     
     if (offset != 0) {
@@ -58,7 +60,11 @@ fstyp_mod_init(int fd, off64_t offset, fstyp_mod_handle_t *handle)
         return (FSTYP_ERR_NOMEM);
     }
     
+    h->dev = NULL;
+    h->vol = NULL;
+	h->attr = NULL;
     h->fd = fd;
+
     *d_private = fd;
     
     /* Ignore all logs! */
@@ -82,8 +88,6 @@ fstyp_mod_init(int fd, off64_t offset, fstyp_mod_handle_t *handle)
         free(h);
         return (FSTYP_ERR_NOMEM);
     }
-    
-    h->vol = NULL;
 
     *handle = (fstyp_mod_handle_t)h;
     return (0);
@@ -135,7 +139,7 @@ fstyp_mod_get_attr(fstyp_mod_handle_t handle, nvlist_t **attrp)
         if (nvlist_alloc(&h->attr, NV_UNIQUE_NAME_TYPE, 0)) {
             return (FSTYP_ERR_NOMEM);
         }
-        if ((error = get_attr(h)) != 0) {
+        if ((error = ntfs_get_attr(h)) != 0) {
             nvlist_free(h->attr);
             h->attr = NULL;
             return (error);
@@ -199,7 +203,7 @@ fstyp_mod_dump(fstyp_mod_handle_t handle, FILE *fout, FILE *ferr)
 }
 
 static int ntfs_get_attr(fstyp_ntfs_t *h) {
-    if(h->vol != 0) {
+    if(h->vol == NULL) {
         return 1;
     }
     
