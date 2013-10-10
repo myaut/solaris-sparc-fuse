@@ -474,6 +474,8 @@ ntfs_volume *ntfs_volume_startup(struct ntfs_device *dev,
 	ntfs_volume *vol;
 	NTFS_BOOT_SECTOR *bs;
 	int eo;
+	int partnum = 0;
+	BOOL parttable = TRUE;
 
 	if (!dev || !dev->d_ops || !dev->d_name) {
 		errno = EINVAL;
@@ -531,7 +533,26 @@ ntfs_volume *ntfs_volume_startup(struct ntfs_device *dev,
 	}
 	/* Attach the device to the volume. */
 	vol->dev = dev;
-	
+
+retry:
+	while(partnum++ < 4) {
+		if(ntfs_set_partition(dev, partnum) == 0) {
+			ntfs_log_info("Found partition #%d [%lld:+%lld]\n", partnum,
+							(long long) dev->d_offset, (long long) dev->d_size);
+			break;
+		}
+
+		if(errno != ESRCH) {
+			/* No partition table found or other error */
+			partnum = 0;
+			parttable = FALSE;
+
+			ntfs_log_perror("Error reading partition #%d", partnum);
+
+			break;
+		}
+	}
+
 	/* Now read the bootsector. */
 	br = ntfs_pread(dev, 0, sizeof(NTFS_BOOT_SECTOR), bs);
 	if (br != sizeof(NTFS_BOOT_SECTOR)) {
@@ -544,6 +565,9 @@ ntfs_volume *ntfs_volume_startup(struct ntfs_device *dev,
 		goto error_exit;
 	}
 	if (!ntfs_boot_sector_is_ntfs(bs)) {
+		if(parttable && partnum < 4)
+			goto retry;
+
 		errno = EINVAL;
 		goto error_exit;
 	}

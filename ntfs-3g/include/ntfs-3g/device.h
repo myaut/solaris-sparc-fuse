@@ -80,6 +80,11 @@ struct ntfs_device {
 	char *d_name;				/* Name of device. */
 	void *d_private;			/* Private data used by the
 						   device operations. */
+
+	/* For partition support */
+	int  d_partnum;
+	s64  d_offset;
+	s64	 d_size;
 };
 
 struct stat;
@@ -130,5 +135,7 @@ extern int ntfs_device_heads_get(struct ntfs_device *dev);
 extern int ntfs_device_sectors_per_track_get(struct ntfs_device *dev);
 extern int ntfs_device_sector_size_get(struct ntfs_device *dev);
 extern int ntfs_device_block_size_set(struct ntfs_device *dev, int block_size);
+
+extern int ntfs_set_partition(struct ntfs_device *dev, int partnum);
 
 #endif /* defined _NTFS_DEVICE_H */

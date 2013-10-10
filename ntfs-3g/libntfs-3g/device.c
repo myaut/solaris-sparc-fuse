@@ -128,6 +128,10 @@ struct ntfs_device *ntfs_device_alloc(const char *name, const long state,
 		dev->d_ops = dops;
 		dev->d_state = state;
 		dev->d_private = priv_data;
+
+		dev->d_partnum = 0;
+		dev->d_size = 0;
+		dev->d_offset = 0;
 	}
 	return dev;
 }
@@ -201,7 +205,9 @@ s64 ntfs_pread(struct ntfs_device *dev, const s64 pos, s64 count, void *b)
 	s64 br, total;
 	struct ntfs_device_operations *dops;
 
-	ntfs_log_trace("pos %lld, count %lld\n",(long long)pos,(long long)count);
+	s64 _pos = pos + dev->d_offset;
+
+	ntfs_log_trace("pos %lld, count %lld\n",(long long)_pos,(long long)count);
 	
 	if (!b || count < 0 || pos < 0) {
 		errno = EINVAL;
@@ -213,7 +219,7 @@ s64 ntfs_pread(struct ntfs_device *dev, const s64 pos, s64 count, void *b)
 	dops = dev->d_ops;
 
 	for (total = 0; count; count -= br, total += br) {
-		br = dops->pread(dev, (char*)b + total, count, pos + total);
+		br = dops->pread(dev, (char*)b + total, count, _pos);
 		/* If everything ok, continue. */
 		if (br > 0)
 			continue;
@@ -252,9 +258,11 @@ s64 ntfs_pwrite(struct ntfs_device *dev, const s64 pos, s64 count,
 	s64 written, total, ret = -1;
 	struct ntfs_device_operations *dops;
 
-	ntfs_log_trace("pos %lld, count %lld\n",(long long)pos,(long long)count);
+	s64 _pos = pos + dev->d_offset;
 
-	if (!b || count < 0 || pos < 0) {
+	ntfs_log_trace("pos %lld, count %lld\n",(long long)_pos,(long long)count);
+
+	if (!b || count < 0 || _pos < 0) {
 		errno = EINVAL;
 		goto out;
 	}
@@ -270,7 +278,7 @@ s64 ntfs_pwrite(struct ntfs_device *dev, const s64 pos, s64 count,
 	NDevSetDirty(dev);
 	for (total = 0; count; count -= written, total += written) {
 		written = dops->pwrite(dev, (const char*)b + total, count,
-				       pos + total);
+				_pos + total);
 		/* If everything ok, continue. */
 		if (written > 0)
 			continue;
@@ -502,7 +510,7 @@ static int ntfs_device_offset_valid(struct ntfs_device *dev, s64 ofs)
 {
 	char ch;
 
-	if (dev->d_ops->seek(dev, ofs, SEEK_SET) >= 0 &&
+	if (dev->d_ops->seek(dev, dev->d_offset + ofs, SEEK_SET) >= 0 &&
 			dev->d_ops->read(dev, &ch, 1) == 1)
 		return 0;
 	return -1;
@@ -528,6 +536,12 @@ s64 ntfs_device_size_get(struct ntfs_device *dev, int block_size)
 		errno = EINVAL;
 		return -1;
 	}
+
+	if(dev->d_partnum > 0) {
+		/* If it is a partition, we already cached size */
+		return dev->d_size;
+	}
+
 #ifdef BLKGETSIZE64
 	{	u64 size;
 
@@ -605,7 +619,7 @@ s64 ntfs_device_size_get(struct ntfs_device *dev, int block_size)
 		else
 			high = mid;
 	}
-	dev->d_ops->seek(dev, 0LL, SEEK_SET);
+	dev->d_ops->seek(dev, dev->d_offset, SEEK_SET);
 	return (low + 1LL) / block_size;
 }
 
@@ -805,4 +819,90 @@ int ntfs_device_block_size_set(struct ntfs_device *dev,
 	errno = EOPNOTSUPP;
 #endif
 	return -1;
+}
+
+typedef struct _ntfs_partition {
+	u8 	status;
+	u8	first_chs[3];
+	u8  type;
+	u8  last_chs[3];
+	u32 first_lba;
+	u32 size_lba;
+} __attribute__((packed)) ntfs_partition_t;
+
+#define NTFS_BLK_SIZE					512
+
+/**
+ * ntfs_set_partition - reads partition table and rewinds ntfs to partition #x
+ * @dev:	 open device
+ * @partnum: partition number (1-4 or 0 - whole device)
+ *
+ * On success, return 0.
+ * On error return -1 with errno set to the error code.
+ *
+ * The following error codes are defined:
+ *	EINVAL		Input parameter error
+ *	ENOMEM		Failed to allocate buffer for MBR
+ *	ENXIO		No MBR record found
+ *	ESRCH		No such partiton (try next)
+ */
+int ntfs_set_partition(struct ntfs_device *dev, int partnum) {
+	void* mbr;
+	u8*  bmbr;
+
+	ntfs_partition_t* partition;
+
+	int err = 0;
+
+	if(!dev || partnum < 0 || partnum > 4) {
+		errno = EINVAL;
+		return 1;
+	}
+
+	dev->d_partnum  = 0;
+	dev->d_size 	= 0;
+	dev->d_offset   = 0;
+
+	if(partnum == 0) {
+		return 0;
+	}
+
+	mbr = ntfs_malloc(512);
+
+	if(!mbr) {
+		errno = ENOMEM;
+		return 1;
+	}
+
+	if(ntfs_pread(dev, 0, 512, mbr) != 512) {
+		err = 1;
+		errno = ENXIO;
+		goto end;
+	}
+
+	bmbr = (u8*)  mbr;
+
+	/* Check signature */
+	if(   bmbr[0x1FE] != 0x55
+	   || bmbr[0x1FF] != 0xAA) {
+		errno = ENXIO;
+		err = 1;
+		goto end;
+	}
+
+	partition = (ntfs_partition_t*) (bmbr + 0x1BE + 16 * (partnum - 1));
+
+	if(partition->type == 0) {
+		errno = ESRCH;
+		err = 1;
+		goto end;
+	}
+
+	dev->d_partnum = partnum;
+	dev->d_offset = ((s64) le32_to_cpu(partition->first_lba)) * NTFS_BLK_SIZE;
+	dev->d_size   = ((s64) le32_to_cpu(partition->size_lba))  * NTFS_BLK_SIZE;
+
+end:
+	free(mbr);
+	return err;
 }

@@ -61,7 +61,8 @@ fstyp_mod_init(int fd, off64_t offset, fstyp_mod_handle_t *handle)
     h->fd = fd;
     *d_private = fd;
     
-    ntfs_log_set_handler(ntfs_log_handler_outerr);
+    /* Ignore all logs! */
+    ntfs_log_set_handler(ntfs_log_handler_null);
 
     /* XXX: Hack our open routine cause we already have fd */
     if(!io_ops_initialized) {
@@ -213,11 +214,11 @@ static int ntfs_device_fstyp_io_open(struct ntfs_device *dev, int flags) {
     /* Already opened it by fstyp - ignore it */
     NDevSetOpen(dev);
     
-    NDevClearOpen(dev);
-    
     return 0;
 }
 
 static int ntfs_device_fstyp_io_close(struct ntfs_device *dev) {
+	NDevClearOpen(dev);
+
     return 0;
 }
