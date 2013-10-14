@@ -291,28 +291,54 @@ ssize_t exfat_write(struct exfat_dev* dev, const void* buffer, size_t size)
 #endif
 }
 
-void exfat_pread(struct exfat_dev* dev, void* buffer, size_t size,
+int exfat_pread(struct exfat_dev* dev, void* buffer, size_t size,
 		off_t offset)
 {
+	if(offset == EXFAT_ERROR_OFF_T)
+		return -EIO;
+
 #ifdef USE_UBLIO
 	if (ublio_pread(dev->ufh, buffer, size, offset) != size)
 #else
-	if (pread(dev->fd, buffer, size, dev->part_offset + offset) != size)
+	if (pread(dev->fd, buffer, size, dev->part_offset + offset) != size) {
 #endif
 		exfat_bug("failed to read %zu bytes from file at %"PRIu64, size,
 				(uint64_t) offset);
+		return -EIO;
+	}
+
+	return 0;
 }
 
-void exfat_pwrite(struct exfat_dev* dev, const void* buffer, size_t size,
+int exfat_pwrite(struct exfat_dev* dev, const void* buffer, size_t size,
 		off_t offset)
 {
+	if(offset == EXFAT_ERROR_OFF_T)
+		return -EIO;
+
 #ifdef USE_UBLIO
 	if (ublio_pwrite(dev->ufh, buffer, size, offset) != size)
 #else
-	if (pwrite(dev->fd, buffer, size, dev->part_offset + offset) != size)
+	if (pwrite(dev->fd, buffer, size, dev->part_offset + offset) != size) {
 #endif
 		exfat_bug("failed to write %zu bytes to file at %"PRIu64, size,
 				(uint64_t) offset);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+int exfat_cluster_pread(const struct exfat* ef, void* data, cluster_t cluster) {
+	off_t co = exfat_c2o(ef, cluster);
+
+	return exfat_pread(ef->dev, data, CLUSTER_SIZE(*ef->sb), co);
+}
+
+int exfat_cluster_pwrite(const struct exfat* ef, void* data, cluster_t cluster) {
+	off_t co = exfat_c2o(ef, cluster);
+
+	return exfat_pwrite(ef->dev, data, CLUSTER_SIZE(*ef->sb), co);
 }
 
 ssize_t exfat_generic_pread(const struct exfat* ef, struct exfat_node* node,

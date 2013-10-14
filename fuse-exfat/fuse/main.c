@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <exfat/exfat.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -125,7 +126,11 @@ static int fuse_exfat_readdir(const char* path, void* buffer,
 	}
 	while ((node = exfat_readdir(&ef, &it)))
 	{
-		exfat_get_name(node, name, EXFAT_NAME_MAX);
+		rc = exfat_get_name(node, name, EXFAT_NAME_MAX);
+		if(rc != 0) {
+			exfat_put_node(&ef, node);
+			return rc;
+		}
 		exfat_debug("[%s] %s: %s, %"PRId64" bytes, cluster 0x%x", __func__,
 				name, IS_CONTIGUOUS(*node) ? "contiguous" : "fragmented",
 				node->size, node->start_cluster);
@@ -328,7 +333,7 @@ static struct fuse_operations fuse_exfat_ops =
 #endif
 	.statfs		= fuse_exfat_statfs,
 	.init		= fuse_exfat_init,
-	.mknod		= fuse_exfat_create,
+	.create		= fuse_exfat_create,
 	.destroy	= fuse_exfat_destroy,
 };
 
@@ -420,19 +425,13 @@ static char* add_fuse_options(char* options, const char* spec)
 	return options;
 }
 
-static void exfat_fuse_finish(void) {
-	if(fh)
-		fuse_remove_signal_handlers(fuse_get_session(fh));
-
-	/* note that fuse_unmount() must be called BEFORE fuse_destroy() */
-
-	if(mount_point && fc)
-		fuse_unmount(mount_point, fc);
-
-	if(fh)
-		fuse_destroy(fh);
-
-	exit(0);
+static void exfat_fuse_bug(void) {
+#ifdef STRICT_BUG
+	/* On bugs kill myself */
+	kill(getpid(), SIGTERM);
+#else
+	/* Threat bugs as errors */
+#endif
 }
 
 int main(int argc, char* argv[])
@@ -489,7 +488,7 @@ int main(int argc, char* argv[])
 		usage(argv[0]);
 	}
 
-	exfat_bug_handler = exfat_fuse_finish;
+	exfat_bug_handler = exfat_fuse_bug;
 
 	if (exfat_mount(&ef, spec, mount_options) != 0)
 	{
@@ -575,6 +574,10 @@ int main(int argc, char* argv[])
 	else
 		exfat_error("failed to daemonize");
 
-	exfat_fuse_finish();
+	fuse_remove_signal_handlers(fuse_get_session(fh));
+	/* note that fuse_unmount() must be called BEFORE fuse_destroy() */
+	fuse_unmount(mount_point, fc);
+	fuse_destroy(fh);
+
 	return 0;
 }

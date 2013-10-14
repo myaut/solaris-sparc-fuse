@@ -21,6 +21,7 @@
 #include <exfat/exfat.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <inttypes.h>
 
 void exfat_stat(const struct exfat* ef, const struct exfat_node* node,
@@ -44,10 +45,14 @@ void exfat_stat(const struct exfat* ef, const struct exfat_node* node,
 	stbuf->st_ctime = node->mtime;
 }
 
-void exfat_get_name(const struct exfat_node* node, char* buffer, size_t n)
+int exfat_get_name(const struct exfat_node* node, char* buffer, size_t n)
 {
-	if (utf16_to_utf8(buffer, node->name, n, EXFAT_NAME_MAX) != 0)
+	if (utf16_to_utf8(buffer, node->name, n, EXFAT_NAME_MAX) != 0) {
 		exfat_bug("failed to convert name to UTF-8");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 uint16_t exfat_start_checksum(const struct exfat_entry_meta1* entry)

@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -34,6 +35,9 @@
 #include <exfat/byteorder.h>
 
 #define EXFAT_BLK_SIZE		512
+
+#define EXFAT_ERROR_SIZE_T		((size_t)-1)
+#define EXFAT_ERROR_OFF_T	((off_t)-1)
 
 #define EXFAT_NAME_MAX 256
 #define EXFAT_ATTRIB_CONTIGUOUS 0x10000
@@ -146,7 +150,7 @@ extern int exfat_log_enabled;
 extern exfat_bug_handler_func exfat_bug_handler;
 
 void exfat_bug(const char* format, ...)
-	__attribute__((format(printf, 1, 2), noreturn));
+	__attribute__((format(printf, 1, 2)));
 void exfat_error(const char* format, ...)
 	__attribute__((format(printf, 1, 2)));
 void exfat_warn(const char* format, ...)
@@ -162,10 +166,12 @@ extern off_t exfat_get_size(const struct exfat_dev* dev);
 extern off_t exfat_seek(struct exfat_dev* dev, off_t offset, int whence);
 extern ssize_t exfat_read(struct exfat_dev* dev, void* buffer, size_t size);
 extern ssize_t exfat_write(struct exfat_dev* dev, const void* buffer, size_t size);
-extern void exfat_pread(struct exfat_dev* dev, void* buffer, size_t size,
+extern int exfat_pread(struct exfat_dev* dev, void* buffer, size_t size,
 		off_t offset);
-extern void exfat_pwrite(struct exfat_dev* dev, const void* buffer, size_t size,
+extern int exfat_pwrite(struct exfat_dev* dev, const void* buffer, size_t size,
 		off_t offset);
+int exfat_cluster_pread(const struct exfat* ef, void* data, size_t cluster);
+int exfat_cluster_pwrite(const struct exfat* ef, void* data, size_t cluster);
 extern ssize_t exfat_generic_pread(const struct exfat* ef, struct exfat_node* node,
 		void* buffer, size_t size, off_t offset);
 extern ssize_t exfat_generic_pwrite(struct exfat* ef, struct exfat_node* node,
@@ -192,7 +198,7 @@ extern int exfat_find_used_sectors(const struct exfat* ef, off_t* a, off_t* b);
 
 extern void exfat_stat(const struct exfat* ef, const struct exfat_node* node,
 		struct stat* stbuf);
-extern void exfat_get_name(const struct exfat_node* node, char* buffer, size_t n);
+extern int exfat_get_name(const struct exfat_node* node, char* buffer, size_t n);
 extern uint16_t exfat_start_checksum(const struct exfat_entry_meta1* entry);
 extern uint16_t exfat_add_checksum(const void* entry, uint16_t sum);
 extern le16_t exfat_calc_checksum(const struct exfat_entry_meta1* meta1,
@@ -214,7 +220,7 @@ extern struct exfat_node* exfat_get_node(struct exfat_node* node);
 extern void exfat_put_node(struct exfat* ef, struct exfat_node* node);
 extern int exfat_cache_directory(struct exfat* ef, struct exfat_node* dir);
 extern void exfat_reset_cache(struct exfat* ef);
-extern void exfat_flush_node(struct exfat* ef, struct exfat_node* node);
+extern int exfat_flush_node(struct exfat* ef, struct exfat_node* node);
 extern int exfat_unlink(struct exfat* ef, struct exfat_node* node);
 extern int exfat_rmdir(struct exfat* ef, struct exfat_node* node);
 extern int exfat_mknod(struct exfat* ef, const char* path);

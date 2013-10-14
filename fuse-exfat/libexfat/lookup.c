@@ -219,5 +219,7 @@ int exfat_split(struct exfat* ef, struct exfat_node** parent,
 		exfat_put_node(ef, *parent);
 		*parent = *node;
 	}
-	exfat_bug("impossible");
+
+	exfat_bug("split: impossible");
+	return -EINVAL;
 }

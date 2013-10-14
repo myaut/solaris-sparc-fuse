@@ -28,25 +28,35 @@ int exfat_log_enabled = 1;
 
 exfat_bug_handler_func exfat_bug_handler = abort;
 
+static void exfat_logmsg(int priority, const char* prefix, const char* format, va_list ap) {
+	va_list aq;
+
+	if(exfat_log_enabled && !isatty(STDERR_FILENO)) {
+		va_copy(aq, ap);
+
+		fflush(stdout);
+		fputs(prefix, stderr);
+
+		vfprintf(stderr, format, aq);
+
+		va_end(aq);
+
+		fputc('\n', stderr);
+	}
+
+	vsyslog(priority, format, ap);
+}
+
 /*
  * This message means an internal bug in exFAT implementation.
  */
 void exfat_bug(const char* format, ...)
 {
-	va_list ap, aq;
+	va_list ap;
 
 	va_start(ap, format);
-	va_copy(aq, ap);
-
-	fflush(stdout);
-	fputs("BUG: ", stderr);
-	vfprintf(stderr, format, ap);
+	exfat_logmsg(LOG_CRIT, "BUG: ", format, ap);
 	va_end(ap);
-	fputs(".\n", stderr);
-
-	if (!isatty(STDERR_FILENO))
-		vsyslog(LOG_CRIT, format, aq);
-	va_end(aq);
 
 	exfat_bug_handler();
 }
@@ -56,25 +66,13 @@ void exfat_bug(const char* format, ...)
  */
 void exfat_error(const char* format, ...)
 {
-	va_list ap, aq;
+	va_list ap;
 
 	exfat_errors++;
 
-	if(!exfat_log_enabled)
-		return;
-
 	va_start(ap, format);
-	va_copy(aq, ap);
-
-	fflush(stdout);
-	fputs("ERROR: ", stderr);
-	vfprintf(stderr, format, ap);
+	exfat_logmsg(LOG_ERR, "ERROR: ", format, ap);
 	va_end(ap);
-	fputs(".\n", stderr);
-
-	if (!isatty(STDERR_FILENO))
-		vsyslog(LOG_ERR, format, aq);
-	va_end(aq);
 }
 
 /*
@@ -83,23 +81,11 @@ void exfat_error(const char* format, ...)
  */
 void exfat_warn(const char* format, ...)
 {
-	va_list ap, aq;
-
-	if(!exfat_log_enabled)
-		return;
+	va_list ap;
 
 	va_start(ap, format);
-	va_copy(aq, ap);
-
-	fflush(stdout);
-	fputs("WARN: ", stderr);
-	vfprintf(stderr, format, ap);
+	exfat_logmsg(LOG_WARNING, "WARN: ", format, ap);
 	va_end(ap);
-	fputs(".\n", stderr);
-
-	if (!isatty(STDERR_FILENO))
-		vsyslog(LOG_WARNING, format, aq);
-	va_end(aq);
 }
 
 /*
@@ -109,13 +95,7 @@ void exfat_debug(const char* format, ...)
 {
 	va_list ap;
 
-	if(!exfat_log_enabled)
-		return;
-
-	fflush(stdout);
-	fputs("DEBUG: ", stderr);
 	va_start(ap, format);
-	vfprintf(stderr, format, ap);
+	exfat_logmsg(LOG_DEBUG, "DEBUG: ", format, ap);
 	va_end(ap);
-	fputs(".\n", stderr);
 }
