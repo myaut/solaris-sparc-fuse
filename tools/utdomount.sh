@@ -8,10 +8,19 @@ FUSE_UMOUNT=/usr/lib/fs/fuse/fusermount.bin
 
 AWK=/usr/bin/awk
 ID=/usr/bin/id
+CAT=/usr/bin/cat
+RM=/usr/bin/rm
 GREP=/usr/bin/grep
 LS=/usr/bin/ls
 MKDIR=/usr/bin/mkdir
 FSTYP=/usr/sbin/fstyp
+BASENAME=/usr/bin/basename
+CHOWN=/usr/bin/chown
+CHMOD=/usr/bin/chmod
+
+BROWSER=/usr/bin/nautilus
+ICONMEDIA=/usr/share/icons/gnome/32x32/devices/media-flash.png
+ICONEJECT=/usr/share/icons/gnome/32x32/actions/media-eject.png
 
 MOUNT=0
 UMOUNT=0
@@ -22,6 +31,31 @@ PATH=
 ZONEPATH=
 RFLAG=0
 LFLAG=0
+
+# create_desktop_file USERNAME FNAME NAME EXEC ICON 
+function create_desktop_file() {
+	USERNAME=$1
+	FNAME=$2
+	NAME=$3
+	EXEC=$4
+	ICON=$5
+
+$CAT > $FNAME << EOF
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Encoding=UTF-8
+Name=$NAME
+Exec=$EXEC
+Type=Application
+StartupNotify=true
+Icon=$ICON
+Terminal=false
+Categories=Application;
+EOF
+
+	$CHOWN $USERNAME $FNAME
+	$CHMOD a+x $FNAME
+}
 
 while getopts "muf:b:i:lp:Z:r" OPTION
 do
@@ -63,8 +97,6 @@ if [ $LFLAG -eq 1 ]; then
 		
 		I=$(($I + 1))
 	done	
-	
-	$MKDIR $PATH
 fi 
 
 if [ "$FSTYPE" == "pcfs" ]; then
@@ -86,11 +118,16 @@ if [ $UMOUNT -eq 1 ]; then
 	fi
 fi
 
+RVAL=-1
 if [ $MOUNT -eq 1 ] && [ $FSTYPE == "ntfs" ]; then
 	GROUPID=$($AWK -F: '{ if($3 == "'$USERID'") print $4 }' /etc/passwd)
+	$MKDIR $PATH
 	$NTFS3G -o uid=$USERID,gid=$GROUPID $BLKDEV $PATH
+	RVAL=$?
 elif [ $MOUNT -eq 1 ] && [ $FSTYPE == "exfat" ]; then
+	$MKDIR $PATH
 	$EXFAT $BLKDEV $PATH
+	RVAL=$?
 elif [ $UMOUNT -eq 1 ] && [ $FSTYPE == "fuse" ]; then
 	CURUID=$($ID -u)
 	OWNER=$($LS -ld $PATH | $AWK '{ print $3 }')
@@ -98,10 +135,38 @@ elif [ $UMOUNT -eq 1 ] && [ $FSTYPE == "fuse" ]; then
 	
 	if [ "$OWNER" = "$USERNAME" ]; then
 		$FUSE_UMOUNT -u $PATH
+		RVAL=$?
 	else
 		echo "Not owner" >&2 
 		exit 1
 	fi 
 else
 	$UTDOMOUNT $ARGS
+	RVAL=$?
+fi
+
+if [ $MOUNT -eq 1 ]; then
+	PATH=$($AWK '{ if($1 == "'$BLKDEV'" || $1 == "'$BLKDEV':c") print $2 }' /etc/mnttab)
+fi
+
+if [ $RVAL -eq 0 ]; then
+	USERNAME=$($AWK -F: '{ if($3 == "'$USERID'") print $1 }' /etc/passwd)
+	BASEPATH=$($BASENAME $PATH)
+	DESKTOP=/var/opt/SUNWkio/home/$USERNAME/Desktop
+	
+	if ! [ -d "$DESKTOP" ]; then
+		exit 0;		
+	fi
+	
+	if [ $MOUNT -eq 1 ]; then
+		create_desktop_file $USERNAME "$DESKTOP/open_$BASEPATH.desktop" \
+					"Открыть $BASEPATH" \
+					"$BROWSER $PATH" $ICONMEDIA 
+		create_desktop_file $USERNAME "$DESKTOP/umount_$BASEPATH.desktop" \
+					"Извлечь $BASEPATH" \
+					"gnome-terminal -e \"$0 -u -p $PATH -i $USERID\"" $ICONEJECT
+	elif [ $UMOUNT -eq 1 ]; then
+		$RM "$DESKTOP/open_$BASEPATH.desktop"
+		$RM "$DESKTOP/umount_$BASEPATH.desktop"
+	fi 
 fi
