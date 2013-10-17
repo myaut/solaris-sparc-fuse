@@ -19,8 +19,11 @@ CHOWN=/usr/bin/chown
 CHMOD=/usr/bin/chmod
 
 BROWSER=/usr/bin/nautilus
-ICONMEDIA=/usr/share/icons/gnome/32x32/devices/media-flash.png
-ICONEJECT=/usr/share/icons/gnome/32x32/actions/media-eject.png
+# ICONMEDIA=/usr/share/icons/gnome/32x32/devices/media-flash.png
+# ICONEJECT=/usr/share/icons/gnome/32x32/actions/media-eject.png
+ICONMEDIA=drive-removable-media-usb-pendrive
+ICONEJECT=media-eject
+
 
 MOUNT=0
 UMOUNT=0
@@ -99,6 +102,18 @@ if [ $LFLAG -eq 1 ]; then
 	done	
 fi 
 
+# Makes mountpoint and changes permissions
+function mkmntpt() {
+	if [ $LFLAG -eq 1 ]; then
+		USERNAME=$($AWK -F: '{ if($3 == "'$CURUID'") print $1 }' /etc/passwd)
+		GROUPNAME=$($ID -u -nr $USERNAME)
+
+		$MKDIR $1
+		$CHOWN $USERNAME:$GROUPNAME $1
+		$CHMOD 777 $1
+	fi
+}
+
 if [ "$FSTYPE" == "pcfs" ]; then
 	# Oh, my gosh! PCFS also means that utmountd found partitions and 'guessed it is PCFS'
 	# If fstyp returns 'no matches', utmountd was right, correct it otherwise
@@ -121,23 +136,22 @@ fi
 RVAL=-1
 if [ $MOUNT -eq 1 ] && [ $FSTYPE == "ntfs" ]; then
 	GROUPID=$($AWK -F: '{ if($3 == "'$USERID'") print $4 }' /etc/passwd)
-	$MKDIR $PATH
+	mkmntpt $PATH
 	$NTFS3G -o uid=$USERID,gid=$GROUPID $BLKDEV $PATH
 	RVAL=$?
 elif [ $MOUNT -eq 1 ] && [ $FSTYPE == "exfat" ]; then
-	$MKDIR $PATH
+	mkmntpt $PATH
 	$EXFAT $BLKDEV $PATH
 	RVAL=$?
 elif [ $UMOUNT -eq 1 ] && [ $FSTYPE == "fuse" ]; then
-	CURUID=$($ID -u)
 	OWNER=$($LS -ld $PATH | $AWK '{ print $3 }')
-	USERNAME=$($AWK -F: '{ if($3 == "'$CURUID'") print $1 }' /etc/passwd)
+	USERNAME=$($AWK -F: '{ if($3 == "'$USERID'") print $1 }' /etc/passwd)
 	
-	if [ "$OWNER" = "$USERNAME" ]; then
+	if [ "$OWNER" = "$USERNAME" -o "$OWNER" = "root" ]; then
 		$FUSE_UMOUNT -u $PATH
 		RVAL=$?
 	else
-		echo "Not owner" >&2 
+		echo "Not owner: owner is $OWNER and you're $USERNAME" >&2 
 		exit 1
 	fi 
 else
@@ -164,7 +178,7 @@ if [ $RVAL -eq 0 ]; then
 					"$BROWSER $PATH" $ICONMEDIA 
 		create_desktop_file $USERNAME "$DESKTOP/umount_$BASEPATH.desktop" \
 					"Извлечь $BASEPATH" \
-					"gnome-terminal -e \"$0 -u -p $PATH -i $USERID\"" $ICONEJECT
+					"$0 -u -p $PATH -i $USERID" $ICONEJECT
 	elif [ $UMOUNT -eq 1 ]; then
 		$RM "$DESKTOP/open_$BASEPATH.desktop"
 		$RM "$DESKTOP/umount_$BASEPATH.desktop"
